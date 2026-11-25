@@ -1,4 +1,4 @@
-driverId,hours-logged,miles-logged,name
+driver_id,hours_logged,miles_logged,name
 10,3232,147150,George Vetticaden
 11,3642,179300,Jamie Engesser
 12,2639,135962,Paul Coddin

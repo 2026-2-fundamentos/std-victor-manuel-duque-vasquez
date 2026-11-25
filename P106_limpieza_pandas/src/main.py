@@ -57,20 +57,20 @@ def clean_column_names(df):
 
 
 def clean_supplier_column(df):
-    df["supplier"] = df["supplier"].str.strip()
-    df["supplier"] = df["supplier"].replace(SUPPLIER_REPLACEMENTS)
+    df.loc[:, "supplier"] = df["supplier"].str.strip()
+    df.loc[:, "supplier"] = df["supplier"].replace(SUPPLIER_REPLACEMENTS)
     return df
 
 
 def clean_country_column(df):
-    df["country"] = df["country"].str.strip()
-    df["country"] = df["country"].replace(COUNTRY_REPLACEMENTS)
+    df.loc[:, "country"] = df["country"].str.strip()
+    df.loc[:, "country"] = df["country"].replace(COUNTRY_REPLACEMENTS)
     return df
 
 
 def clean_city_column(df):
-    df["city"] = df["city"].str.strip()
-    df["city"] = df["city"].replace(CITY_REPLACEMENTS)
+    df.loc[:, "city"] = df["city"].str.strip()
+    df.loc[:, "city"] = df["city"].replace(CITY_REPLACEMENTS)
     return df
 
 
@@ -91,9 +91,109 @@ def clean_purchase_date_column(df):
 
         return series.str.replace(r"(\d{2})/(\d{2})/(\d{4})", convert_date, regex=True)
 
-    df["purchase_date"] = df["purchase_date"].str.strip()
-    df["purchase_date"] = convert_yyyy_s_mm_s_dd_to_yyyy_mm_dd(df["purchase_date"])
-    df["purchase_date"] = convert_mmddyyyy_to_yyyy_mm_dd(df["purchase_date"])
+    def convert_dd_mm_yyyy_to_yyyy_mm_dd_separated_with_dots(series):
+        # Corrige fechas en formato "DD.MM.YYYY" a "YYYY-MM-DD"
+        return series.str.replace(r"(\d{2})\.(\d{2})\.(\d{4})", r"\3-\2-\1", regex=True)
+
+    def convert_dd_mm_yy_to_yyyy_mm_dd_separated_with_hyphens(series):
+        # Corrige fechas en formato "DD-MM-YY" a "YYYY-MM-DD"
+        return series.str.replace(
+            r"^(\d{2})-(\d{2})-(\d{2})$", r"20\3-\2-\1", regex=True
+        )
+
+    df.loc[:, "purchase_date"] = df["purchase_date"].str.strip()
+    df.loc[:, "purchase_date"] = convert_yyyy_s_mm_s_dd_to_yyyy_mm_dd(df["purchase_date"])
+    df.loc[:, "purchase_date"] = convert_mmddyyyy_to_yyyy_mm_dd(df["purchase_date"])
+    df.loc[:, "purchase_date"] = convert_dd_mm_yyyy_to_yyyy_mm_dd_separated_with_dots(
+        df["purchase_date"]
+    )
+    df.loc[:, "purchase_date"] = convert_dd_mm_yy_to_yyyy_mm_dd_separated_with_hyphens(
+        df["purchase_date"]
+    )
+
+    return df
+
+
+def clean_amount_column(df):
+
+    def clean_strings_ending_with_k(series):
+        # Convierte valores como "1.5K" a "1500"
+        def convert_value(value):
+            if isinstance(value, str) and value.endswith("K"):
+                try:
+                    return int(float(value[:-1]) * 1000)
+                except ValueError:
+                    return value
+            return value
+
+        return series.apply(convert_value)
+
+    def clean_strings_starting_with_COP(series):
+        # Convierte valores como "COP 1,250,000" a "1250000"
+        def convert_value(value):
+            if isinstance(value, str) and value.startswith("COP"):
+                try:
+                    return int(value[3:].replace(",", "").strip())
+                except ValueError:
+                    return value
+            return value
+
+        return series.apply(convert_value)
+
+    def clean_strings_starting_with_dollar(series):
+        # Convierte valores como "$1,250,000" a "1250000"
+        def convert_value(value):
+            if isinstance(value, str) and value.startswith("$"):
+                try:
+                    return int(value[1:].replace(",", "").strip())
+                except ValueError:
+                    return value
+            return value
+
+        return series.apply(convert_value)
+
+    def remove_dots(series):
+        # Elimina los puntos de los valores numéricos
+        def convert_value(value):
+            if isinstance(value, str):
+                try:
+                    return int(value.replace(".", "").strip())
+                except ValueError:
+                    return value
+            return value
+
+        return series.apply(convert_value)
+
+    df.loc[:, "amount"] = df["amount"].str.strip()
+    df.loc[:, "amount"] = clean_strings_ending_with_k(df["amount"])
+    df.loc[:, "amount"] = clean_strings_starting_with_COP(df["amount"])
+    df.loc[:, "amount"] = clean_strings_starting_with_dollar(df["amount"])
+    df.loc[:, "amount"] = remove_dots(df["amount"])
+
+    return df
+
+
+def clean_discount_column(df):
+    # Limpia la columna de descuento
+    df.loc[:, "discount"] = df["discount"].str.strip()
+    df.loc[:, "discount"] = df["discount"].str.replace("%", "", regex=False)
+    df.loc[:, "discount"] = df["discount"].map(
+        lambda x: float(x) / 100 if not pd.isna(x) and float(x) > 1 else x
+    )
+
+    return df
+
+
+def clean_weight_column(df):
+    weights = df["weight"].astype("string").str.strip().str.lower()
+    multipliers = (
+        weights.str.extract(r"(kg|g|ton)$", expand=False)
+        .map({"kg": 1, "g": 0.001, "ton": 1000})
+        .fillna(1)
+    )
+    values = weights.str.replace(r"\s*(kg|g|ton)$", "", regex=True)
+    values = values.str.replace(",", ".", regex=False)
+    df.loc[:, "weight"] = pd.to_numeric(values, errors="coerce") * multipliers
     return df
 
 
@@ -104,6 +204,9 @@ def main():
     df = clean_country_column(df)
     df = clean_city_column(df)
     df = clean_purchase_date_column(df)
+    df = clean_amount_column(df)
+    df = clean_weight_column(df)
+    df = clean_discount_column(df)
     df.to_csv(OUTPUT_FILE, index=False)
 
 
